@@ -1,0 +1,14 @@
+[package]
+name = "itoken-harness"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+itoken-core = { path = "../itoken-core" }
+itoken-network = { path = "../itoken-network" }
+itoken-inference = { path = "../itoken-inference" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }

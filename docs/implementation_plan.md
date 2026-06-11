@@ -1,4 +1,4 @@
-# DPU (Decentralized Processing Unit) — 상세 구현 계획서 v2
+# iToken (Decentralized Processing Unit) — 상세 구현 계획서 v2
 
 > 3개 병렬 연구(P2P 네트워킹, 범용 추론 엔진, 독립 블록체인 장부)의 결과를 종합한 최종 아키텍처 및 구현 계획
 
@@ -54,8 +54,8 @@
 ```
 
 **이유 (Simple is Best):**
-1. **바퀴의 재발명 방지:** GPU 가속 최적화(CUDA, Metal, Vulkan), 컨텍스트 페이징, 양자화 모델 로딩은 이미 기존 도구들(Ollama, LM Studio 등)이 완벽하게 처리하고 있습니다. 이를 DPU 안에 중복 구현할 필요가 없습니다.
-2. **범용 인터페이스 연동:** 대부분의 로컬 추론 도구는 표준 OpenAI 규격의 HTTP API(`/v1/chat/completions`)를 제공하므로, DPU 데몬은 P2P 요청을 로컬 API로 넘겨주는 **안전한 역프록시(Reverse Proxy) 게이트웨이 역할**만 수행하면 됩니다.
+1. **바퀴의 재발명 방지:** GPU 가속 최적화(CUDA, Metal, Vulkan), 컨텍스트 페이징, 양자화 모델 로딩은 이미 기존 도구들(Ollama, LM Studio 등)이 완벽하게 처리하고 있습니다. 이를 iToken 안에 중복 구현할 필요가 없습니다.
+2. **범용 인터페이스 연동:** 대부분의 로컬 추론 도구는 표준 OpenAI 규격의 HTTP API(`/v1/chat/completions`)를 제공하므로, iToken 데몬은 P2P 요청을 로컬 API로 넘겨주는 **안전한 역프록시(Reverse Proxy) 게이트웨이 역할**만 수행하면 됩니다.
 3. **자동 인식 및 제로 설정:** 구동 시 로컬 컴퓨터의 주요 포트(11434, 1234, 8080 등)를 스캔하여 실행 중인 모델을 감지하고 DHT에 바로 등록하거나, 사용자가 특정 IP/포트(`http://192.168.0.5:12345`)를 수동 지정하기만 하면 즉시 연동됩니다.
 
 ---
@@ -113,7 +113,7 @@ function detect_best_backend():
 
 ### 2.1 SETI@home과의 비교 및 개선
 
-| 항목 | SETI@home (BOINC) | DPU 네트워크 |
+| 항목 | SETI@home (BOINC) | iToken 네트워크 |
 |:---|:---|:---|
 | 아키텍처 | ❌ 클라이언트-서버 (중앙 서버 의존) | ✅ 완전 P2P (libp2p) |
 | 지연 시간 | 배치 처리 (무관) | 실시간 스트리밍 (latency 중요) |
@@ -300,7 +300,7 @@ function route_query(query, mode):
 
 ### 4.3 추론 검증 합의 메커니즘 (VeriLLM 및 하이브리드 검증)
 
-LLM 추론은 실행 환경에 따라 미세한 수치적 비결정성이 존재하므로 단순 바이트 단위 비교(Bit-for-bit match)가 불가능하며, 악의적 노드가 연산을 우회하여 Hidden State를 위조(Forgery)할 위험이 있습니다. DPU 네트워크는 이를 방지하기 위해 **VeriLLM의 수학적 한계 보완책**과 **하이브리드 검증 기법**을 결합한 계층적 검증 체계를 설계합니다.
+LLM 추론은 실행 환경에 따라 미세한 수치적 비결정성이 존재하므로 단순 바이트 단위 비교(Bit-for-bit match)가 불가능하며, 악의적 노드가 연산을 우회하여 Hidden State를 위조(Forgery)할 위험이 있습니다. iToken 네트워크는 이를 방지하기 위해 **VeriLLM의 수학적 한계 보완책**과 **하이브리드 검증 기법**을 결합한 계층적 검증 체계를 설계합니다.
 
 #### 1. 비결정성(Numerical Drift) 극복 방식
 동일 프롬프트에 대해 Temperature = 0(Greedy Decoding)으로 설정하더라도, 하드웨어 아키텍처(NVIDIA CUDA vs Apple Metal vs CPU)와 컴파일러 최적화 차이로 부동소수점 연산 순서가 미세하게 달라집니다.
@@ -312,12 +312,12 @@ LLM 추론은 실행 환경에 따라 미세한 수치적 비결정성이 존재
 *   **조건부 확률 검증 (Conditional Probability Check):** 검증자는 특정 시점의 Hidden State로부터 출력된 다음 토큰의 조건부 확률 분포(Greedy Token)가 제출된 텍스트 흐름과 수학적으로 일치하는지 검사합니다. 임의로 프리필하여 끼워 맞춘 Hidden State는 이 오토레그레시브 조건부 확률 인과관계를 유지할 수 없어 적발됩니다.
 *   **무작위 슬롯 검증 (VRF Commit-Reveal):** 추론자는 연산 로그의 Merkle Root를 먼저 퍼블릭 채널에 박제(Commit)하고, 커밋 완료 후 온체인 난수(VRF)로 선정된 무작위 인덱스의 Hidden State만 사후에 공개(Reveal)하여 검증받으므로 타겟형 위조가 불가능합니다.
 
-#### 3. DPU Heterogeneous 하이브리드 검증 모델 (실무적 보완책)
+#### 3. iToken Heterogeneous 하이브리드 검증 모델 (실무적 보완책)
 개인용 RTX, Mac Mini, CPU 등이 혼재된 대규모 분산 환경에서 모든 검증 노드가 무거운 모델을 VRAM에 적재하고 스팟 체킹을 하는 것은 비효율적입니다. 따라서 검증 오버헤드를 줄이기 위한 하이브리드 모델을 구현합니다.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│              [ DPU 계층형 하이브리드 검증 시스템 ]                    │
+│              [ iToken 계층형 하이브리드 검증 시스템 ]                    │
 ├───────────────────────────────────────────────────────────────────────┤
 │  1단계: 출력 수준 의미 합의 (Semantic-level Agreement)               │
 │  • 동일 쿼리에 대해 2개 노드 분산 실행 후, 경량 임베딩 모델(예:       │
@@ -343,7 +343,7 @@ LLM 추론은 실행 환경에 따라 미세한 수치적 비결정성이 존재
 본 시스템의 핵심 자산이자 통화인 **iToken(Intelligence Token)**은 단순한 유틸리티 코인을 넘어, 분산 네트워크상에서 생성된 **지능의 가치(Inference)와 속도(Compute Speed)를 측정하고 교환하는 단일 화폐이자 자산**입니다.
 
 #### 1. iToken의 정의 및 역할
-*   **iToken (네이티브 화폐):** DPU 체인의 기본 장부 통화이자 자산 단위입니다. 하드웨어 제공자가 텍스트 토큰을 생성해 공급하면 iToken이 발행(채굴)되고, 사용자가 추론 쿼리를 던질 때 iToken이 소모됩니다.
+*   **iToken (네이티브 화폐):** iToken 체인의 기본 장부 통화이자 자산 단위입니다. 하드웨어 제공자가 텍스트 토큰을 생성해 공급하면 iToken이 발행(채굴)되고, 사용자가 추론 쿼리를 던질 때 iToken이 소모됩니다.
 *   **지불의 경제적 균형:** 노드는 쿼리를 받기 위해 iToken을 반드시 에스크로에 **담보(Staking)**해야 하며, 사기나 기형적인 추론 속도 제공 시 담보가 즉시 몰수(Slashing)됩니다.
 
 #### 2. 속도(TPS) 및 하드웨어 차등 평가 공식
@@ -385,12 +385,12 @@ $$\text{iToken Reward} = \text{Generated Tokens} \times TQW_{M, Q} \times \text{
 ### Phase 1: PoC (순수 Rust + llama-server)
 
 ```
-d:/Code/DPU/
+d:/Code/iToken/
 ├── Cargo.toml                    # Rust 프로젝트 매니페스트
 ├── README.md                     # 설치 및 실행 가이드
 │
 ├── crates/
-│   ├── dpu-core/                 # 핵심 타입 및 프로토콜 정의
+│   ├── itoken-core/                 # 핵심 타입 및 프로토콜 정의
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -398,7 +398,7 @@ d:/Code/DPU/
 │   │       ├── protocol.rs       # P2P 메시지 타입 (QueryRequest, QueryResponse 등)
 │   │       └── crypto.rs         # ECDSA 키페어, 트랜잭션 서명/검증
 │   │
-│   ├── dpu-network/              # P2P 네트워킹 (libp2p)
+│   ├── itoken-network/              # P2P 네트워킹 (libp2p)
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -407,7 +407,7 @@ d:/Code/DPU/
 │   │       ├── transport.rs      # QUIC 전송 + NAT Traversal (AutoNAT, DCUtR, Relay)
 │   │       └── routing.rs        # 모델 기반 최적 노드 검색
 │   │
-│   ├── dpu-inference/            # 범용 API 프록시 및 감지
+│   ├── itoken-inference/            # 범용 API 프록시 및 감지
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -415,7 +415,7 @@ d:/Code/DPU/
 │   │       ├── proxy.rs          # OpenAI API 호환 역프록시 및 토큰 스트리밍
 │   │       └── proof.rs          # 추론 증명 및 보상 산정 (속도/토큰 수 측정)
 │   │
-│   ├── dpu-harness/              # 하네스: 쿼리 라우팅 및 합의
+│   ├── itoken-harness/              # 하네스: 쿼리 라우팅 및 합의
 │   │   ├── Cargo.toml
 │   │   └── src/
 │   │       ├── lib.rs
@@ -424,7 +424,7 @@ d:/Code/DPU/
 │   │       ├── reputation.rs     # 노드 평판 점수 관리 (지연시간, 성공률, 가동률)
 │   │       └── failover.rs       # 소프트 페일오버 (타임아웃 시 백업 노드 라우팅)
 │   │
-│   └── dpu-ledger/               # 독립형 블록체인 원장
+│   └── itoken-ledger/               # 독립형 블록체인 원장
 │       ├── Cargo.toml
 │       └── src/
 │           ├── lib.rs
@@ -440,9 +440,9 @@ d:/Code/DPU/
 │
 ├── client/                       # 클라이언트 SDK (Python)
 │   ├── pyproject.toml
-│   └── dpu_client/
+│   └── itoken_client/
 │       ├── __init__.py
-│       ├── client.py             # DPU 네트워크에 쿼리 전송 API
+│       ├── client.py             # iToken 네트워크에 쿼리 전송 API
 │       ├── wallet.py             # 지갑 관리 (키 생성, 잔고 조회)
 │       └── multi_agent.py        # 멀티에이전트 워크플로우 빌더
 │
@@ -492,11 +492,11 @@ tracing-subscriber = "0.3"
 ## 6. 단계별 구현 로드맵
 
 ### Phase 1: PoC (3–4개월)
-- [ ] `dpu-core`: 핵심 타입, 프로토콜 메시지, ECDSA 서명 구현
-- [ ] `dpu-inference`: 하드웨어 감지 + llama-server 프로세스 관리
-- [ ] `dpu-network`: libp2p 기반 노드 발견 (DHT) + QUIC 통신
-- [ ] `dpu-ledger`: 경량 블록체인 (블록 생성, 트랜잭션, 지갑)
-- [ ] `dpu-harness`: 2-노드 합의 모드 기본 구현
+- [ ] `itoken-core`: 핵심 타입, 프로토콜 메시지, ECDSA 서명 구현
+- [ ] `itoken-inference`: 하드웨어 감지 + llama-server 프로세스 관리
+- [ ] `itoken-network`: libp2p 기반 노드 발견 (DHT) + QUIC 통신
+- [ ] `itoken-ledger`: 경량 블록체인 (블록 생성, 트랜잭션, 지갑)
+- [ ] `itoken-harness`: 2-노드 합의 모드 기본 구현
 - [ ] 데모: 로컬 3노드 시뮬레이션 (쿼리 → 추론 → 합의 → 보상)
 
 ### Phase 2: 멀티에이전트 및 네트워크 강화 (3–4개월)
@@ -551,7 +551,7 @@ cargo test --test ledger_integrity
 > **Rust 개발 경험**: Rust는 학습 곡선이 매우 가파릅니다. 팀 내 Rust 경험자가 있으신가요? 없다면 Go로 시작하여 안정화 후 성능 핵심부를 Rust로 마이그레이션하는 전략도 고려할 수 있습니다.
 
 > [!IMPORTANT]
-> **프로젝트 이름 및 iToken 이름**: 현재 "DPU"는 작업 코드명입니다. 최종 프로젝트명과 토큰 심볼(예: `$DPU`, `$INFER`)을 정하셨나요?
+> **프로젝트 이름 및 iToken 이름**: 현재 "iToken"는 작업 코드명입니다. 최종 프로젝트명과 토큰 심볼(예: `$iToken`, `$INFER`)을 정하셨나요?
 
 > [!WARNING]
 > **법적 검토**: 자체 토큰 발행은 대부분의 국가에서 증권법 또는 가상자산 관련 규제 대상입니다. 한국에서는 특히 "가상자산사업자" 신고 의무가 있을 수 있으므로, 토큰 설계 확정 전 법률 자문을 권장합니다.

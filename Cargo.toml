@@ -1,16 +1,16 @@
 [package]
-name = "dpu-node"
+name = "itoken-node"
 version = "0.2.0"
 edition = "2021"
 
 [workspace]
 resolver = "2"
 members = [
-    "crates/dpu-core",
-    "crates/dpu-network",
-    "crates/dpu-inference",
-    "crates/dpu-harness",
-    "crates/dpu-ledger"
+    "crates/itoken-core",
+    "crates/itoken-network",
+    "crates/itoken-inference",
+    "crates/itoken-harness",
+    "crates/itoken-ledger"
 ]
 
 [workspace.dependencies]
@@ -29,11 +29,11 @@ parking_lot = "0.12"
 clap = { version = "4", features = ["derive"] }
 
 [dependencies]
-dpu-core = { path = "crates/dpu-core" }
-dpu-inference = { path = "crates/dpu-inference" }
-dpu-harness = { path = "crates/dpu-harness" }
-dpu-ledger = { path = "crates/dpu-ledger" }
-dpu-network = { path = "crates/dpu-network" }
+itoken-core = { path = "crates/itoken-core" }
+itoken-inference = { path = "crates/itoken-inference" }
+itoken-harness = { path = "crates/itoken-harness" }
+itoken-ledger = { path = "crates/itoken-ledger" }
+itoken-network = { path = "crates/itoken-network" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

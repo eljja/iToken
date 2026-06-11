@@ -688,96 +688,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dpu-core"
-version = "0.2.0"
-dependencies = [
- "ed25519-dalek",
- "hex",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "dpu-harness"
-version = "0.2.0"
-dependencies = [
- "dpu-core",
- "dpu-inference",
- "dpu-network",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "dpu-inference"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "bytes",
- "dpu-core",
- "futures",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "dpu-ledger"
-version = "0.2.0"
-dependencies = [
- "dpu-core",
- "hex",
- "parking_lot",
- "rand 0.8.6",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "dpu-network"
-version = "0.1.0"
-dependencies = [
- "dpu-core",
- "futures",
- "libp2p",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "dpu-node"
-version = "0.2.0"
-dependencies = [
- "clap",
- "ctrlc",
- "dpu-core",
- "dpu-harness",
- "dpu-inference",
- "dpu-ledger",
- "dpu-network",
- "futures",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1651,6 +1561,96 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "itoken-core"
+version = "0.2.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "itoken-harness"
+version = "0.2.0"
+dependencies = [
+ "itoken-core",
+ "itoken-inference",
+ "itoken-network",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "itoken-inference"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "bytes",
+ "futures",
+ "itoken-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "itoken-ledger"
+version = "0.2.0"
+dependencies = [
+ "hex",
+ "itoken-core",
+ "parking_lot",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "itoken-network"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "itoken-core",
+ "libp2p",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "itoken-node"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "ctrlc",
+ "futures",
+ "itoken-core",
+ "itoken-harness",
+ "itoken-inference",
+ "itoken-ledger",
+ "itoken-network",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
 
 [[package]]
 name = "js-sys"

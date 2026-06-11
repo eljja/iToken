@@ -57,7 +57,7 @@ pub enum P2PCommand {
 // ─── Network Behaviour ─────────────────────────────────────────────────────────
 
 #[derive(NetworkBehaviour)]
-pub struct DpuBehaviour {
+pub struct ItokenBehaviour {
     pub kademlia: KadBehaviour<MemoryStore>,
     pub gossipsub: gossipsub::Behaviour,
     pub identify: identify::Behaviour,
@@ -119,7 +119,7 @@ impl P2PNode {
                     key.public(),
                 ));
 
-                Ok(DpuBehaviour {
+                Ok(ItokenBehaviour {
                     kademlia,
                     gossipsub: gossipsub_behaviour,
                     identify,
@@ -216,7 +216,7 @@ struct PendingQuery {
 }
 
 async fn run_swarm_loop(
-    mut swarm: Swarm<DpuBehaviour>,
+    mut swarm: Swarm<ItokenBehaviour>,
     mut command_rx: mpsc::Receiver<P2PCommand>,
 ) {
     let mut search_queries: HashMap<kad::QueryId, PendingQuery> = HashMap::new();
@@ -288,7 +288,7 @@ async fn run_swarm_loop(
             // Handle swarm events
             event = swarm.select_next_some() => {
                 match event {
-                    SwarmEvent::Behaviour(DpuBehaviourEvent::Kademlia(
+                    SwarmEvent::Behaviour(ItokenBehaviourEvent::Kademlia(
                         kad::Event::OutboundQueryProgressed {
                             id,
                             result: kad::QueryResult::GetRecord(Ok(
@@ -304,7 +304,7 @@ async fn run_swarm_loop(
                             }
                         }
                     }
-                    SwarmEvent::Behaviour(DpuBehaviourEvent::Kademlia(
+                    SwarmEvent::Behaviour(ItokenBehaviourEvent::Kademlia(
                         kad::Event::OutboundQueryProgressed {
                             id,
                             result: kad::QueryResult::GetRecord(result),
@@ -318,7 +318,7 @@ async fn run_swarm_loop(
                             let _ = pending.responder.send(pending.peers);
                         }
                     }
-                    SwarmEvent::Behaviour(DpuBehaviourEvent::Gossipsub(
+                    SwarmEvent::Behaviour(ItokenBehaviourEvent::Gossipsub(
                         gossipsub::Event::Message { message, propagation_source, .. }
                     )) => {
                         debug!(

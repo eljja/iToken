@@ -66,17 +66,17 @@ iToken은 개인의 유휴 하드웨어(RTX GPU, Apple Silicon Mac Mini/Pro, CPU
 ## 📂 프로젝트 구조 (PoC 청사진)
 
 ```
-d:/Code/DPU/
+d:/Code/iToken/
 ├── Cargo.toml                    # Rust 워크스페이스 설정 파일
 ├── README.md                     # 영문 리포지토리 개요
 ├── README_KR.md                  # 한글 리포지토리 개요
 │
 ├── crates/
-│   ├── dpu-core/                 # 코어 타입 정의, ECDSA 키 관리 및 트랜잭션 서명
-│   ├── dpu-network/              # P2P 통신 (libp2p, QUIC 전송, NAT 홀펀칭, DHT 디렉토리)
-│   ├── dpu-inference/            # OpenAI API 프록시, 로컬 포트 스캐너 및 토크나이저
-│   ├── dpu-harness/              # 하네스 라우팅, 가변 합의 및 평판 스코어러
-│   └── dpu-ledger/               # Substrate 솔로 체인 / 경량 PoC 원장
+│   ├── itoken-core/                 # 코어 타입 정의, ECDSA 키 관리 및 트랜잭션 서명
+│   ├── itoken-network/              # P2P 통신 (libp2p, QUIC 전송, NAT 홀펀칭, DHT 디렉토리)
+│   ├── itoken-inference/            # OpenAI API 프록시, 로컬 포트 스캐너 및 토크나이저
+│   ├── itoken-harness/              # 하네스 라우팅, 가변 합의 및 평판 스코어러
+│   └── itoken-ledger/               # Substrate 솔로 체인 / 경량 PoC 원장
 ```
 
 ---

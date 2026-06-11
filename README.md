@@ -66,17 +66,17 @@ iToken is a decentralized, peer-to-peer AI inference network that transforms con
 ## 📂 Repository Structure (PoC Blueprint)
 
 ```
-d:/Code/DPU/
+d:/Code/iToken/
 ├── Cargo.toml                    # Rust Workspace configuration
 ├── README.md                     # Repository Overview (English)
 ├── README_KR.md                  # Repository Overview (Korean)
 │
 ├── crates/
-│   ├── dpu-core/                 # Core shared types, cryptography, and transaction signatures
-│   ├── dpu-network/              # rust-libp2p (QUIC transport, NAT hole punching, Kademlia DHT)
-│   ├── dpu-inference/            # OpenAI API proxy, Port Scanner, and Tokenizer
-│   ├── dpu-harness/              # Request routing, consensus, and node reputation metrics
-│   └── dpu-ledger/               # Substrate solo chain / lightweight PoC ledger
+│   ├── itoken-core/                 # Core shared types, cryptography, and transaction signatures
+│   ├── itoken-network/              # rust-libp2p (QUIC transport, NAT hole punching, Kademlia DHT)
+│   ├── itoken-inference/            # OpenAI API proxy, Port Scanner, and Tokenizer
+│   ├── itoken-harness/              # Request routing, consensus, and node reputation metrics
+│   └── itoken-ledger/               # Substrate solo chain / lightweight PoC ledger
 ```
 
 ---

@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
-use dpu_core::types::{InferenceReceipt, format_itokens, MAX_RECEIPT_AGE_SECS, MAX_FUTURE_DRIFT_SECS};
-use dpu_core::crypto::verify_receipt_signatures;
+use itoken_core::types::{InferenceReceipt, format_itokens, MAX_RECEIPT_AGE_SECS, MAX_FUTURE_DRIFT_SECS};
+use itoken_core::crypto::verify_receipt_signatures;
 
 // ─── Ledger State ──────────────────────────────────────────────────────────────
 
@@ -246,7 +246,7 @@ impl LocalLedger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpu_core::types::NANO_PER_ITOKEN;
+    use itoken_core::types::NANO_PER_ITOKEN;
 
     fn temp_ledger() -> (LocalLedger, String) {
         let path = format!(

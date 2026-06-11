@@ -5,16 +5,16 @@ use futures::StreamExt;
 use clap::Parser;
 use tracing::{info, error, warn};
 
-use dpu_core::types::{InferenceRequest, InferenceReceipt, NANO_PER_ITOKEN, format_itokens};
-use dpu_core::crypto::{
+use itoken_core::types::{InferenceRequest, InferenceReceipt, NANO_PER_ITOKEN, format_itokens};
+use itoken_core::crypto::{
     load_or_generate_keypair, pubkey_to_hex,
     sign_receipt_as_node, sign_receipt_as_client, sha256_hash,
 };
-use dpu_inference::detector::PortDetector;
-use dpu_inference::proxy::InferenceProxy;
-use dpu_harness::reputation::ReputationDb;
-use dpu_harness::routing::HarnessRouter;
-use dpu_ledger::LocalLedger;
+use itoken_inference::detector::PortDetector;
+use itoken_inference::proxy::InferenceProxy;
+use itoken_harness::reputation::ReputationDb;
+use itoken_harness::routing::HarnessRouter;
+use itoken_ledger::LocalLedger;
 
 // ─── CLI Arguments ─────────────────────────────────────────────────────────────
 

@@ -6,7 +6,7 @@ use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
 use tracing::{debug, error, warn};
-use dpu_core::types::InferenceRequest;
+use itoken_core::types::InferenceRequest;
 
 // ─── OpenAI API Types ──────────────────────────────────────────────────────────
 

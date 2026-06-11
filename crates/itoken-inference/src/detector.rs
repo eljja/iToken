@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::time::Duration;
 use reqwest::Client;
 use tracing::{info, warn, debug};
-use dpu_core::types::{ModelSpec, NANO_PER_ITOKEN};
+use itoken_core::types::{ModelSpec, NANO_PER_ITOKEN};
 
 // ─── Detected Engine ───────────────────────────────────────────────────────────
 

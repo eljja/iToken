@@ -24,7 +24,7 @@ The proposed system is **technically highly feasible**. The underlying technolog
 
 ## 2. Competitive Analysis (Prior Art)
 
-Several existing projects target similar concepts, but none fully implement the DPU's unique design:
+Several existing projects target similar concepts, but none fully implement the iToken's unique design:
 
 | Category | Project | Architecture / Features | Limits vs. iToken |
 |:---|:---|:---|:---|
@@ -37,10 +37,10 @@ Several existing projects target similar concepts, but none fully implement the 
 
 ## 3. Product Proposals & Differentiation
 
-To maximize utility and outcompete existing solutions, DPU implements **four key differentiation pillars**:
+To maximize utility and outcompete existing solutions, iToken implements **four key differentiation pillars**:
 
 ### 💡 1. Decoupled Local LLM API Proxy (Simple is Best)
-Rather than writing native CUDA/Metal bindings into the daemon, DPU hooks directly into existing local LLM engines (Ollama, LM Studio, Kobold.cpp) using standard OpenAI-compatible APIs (`/v1/chat/completions`). This eliminates engine complexity, provides plug-and-play setup for users, and ensures future-proof compatibility with any LLM server tool.
+Rather than writing native CUDA/Metal bindings into the daemon, iToken hooks directly into existing local LLM engines (Ollama, LM Studio, Kobold.cpp) using standard OpenAI-compatible APIs (`/v1/chat/completions`). This eliminates engine complexity, provides plug-and-play setup for users, and ensures future-proof compatibility with any LLM server tool.
 
 ### 💡 2. Reputation-Based "1 Query = 1 Node" Routing (Optimistic Path)
 To prevent energy waste and slash network operating costs, the default path avoids multi-node mesh consensus. It routes **1 query directly to 1 trusted node** based on reputation and collateral stake. Redundant consensus (2-Node) is reserved only for new, unverified nodes or random audit checks.

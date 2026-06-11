@@ -1,13 +1,13 @@
 # "Token is Asset" 핵심 합의 및 검토 완료 보고서
 
-> **개요:** DPU 네트워크의 "Token is Asset (토큰이 곧 자산이다)" 핵심 사상을 설계에 반영하는 과정에서 발견된 5가지 설계 Gap과 사용자 추가 요청 사항(외부 추론 API 연동, 1-Query-1-Node 효율성)이 어떻게 최종 [상세 구현 계획서 (implementation_plan.md)](file:///C:/Users/eljja/.gemini/antigravity/brain/29392983-b75e-450a-b47a-6841743669c9/implementation_plan.md)에 통합 및 해결되었는지 정리합니다.
+> **개요:** iToken 네트워크의 "Token is Asset (토큰이 곧 자산이다)" 핵심 사상을 설계에 반영하는 과정에서 발견된 5가지 설계 Gap과 사용자 추가 요청 사항(외부 추론 API 연동, 1-Query-1-Node 효율성)이 어떻게 최종 [상세 구현 계획서 (implementation_plan.md)](file:///C:/Users/eljja/.gemini/antigravity/brain/29392983-b75e-450a-b47a-6841743669c9/implementation_plan.md)에 통합 및 해결되었는지 정리합니다.
 
 ---
 
 ## 🤝 핵심 합의 사항 & Gap 해결 방안 (5가지)
 
 ### 1. 용어 체계 확정 (Gap 1 해결)
-*   **iToken (네이티브 화폐):** DPU 분산 장부상의 단일 주권 통화(Cryptocurrency)이자 자산 단위입니다.
+*   **iToken (네이티브 화폐):** iToken 분산 장부상의 단일 주권 통화(Cryptocurrency)이자 자산 단위입니다.
 *   **추론 토큰 (Inference Token):** LLM이 생성한 실질적인 텍스트 조각(텍스트 토큰)입니다.
 *   **합의된 관계:** 사용자는 추론 토큰을 생성받는 대가로 `iToken`을 소모하고, 하드웨어 공급자는 추론 토큰을 제공하는 만큼 `iToken`을 채굴(Mint)합니다.
 
@@ -46,8 +46,8 @@
 
 ### A. 외부 로컬 추론 API 연동 (Simple is Best)
 *   **기존 계획:** 데몬 내부에서 직접 C++ 기반 llama-server를 실행 및 통제하려고 하여 구현이 복잡했음.
-*   **개선안:** 이미 사용자가 로컬 PC에 설치해 둔 **Ollama(11434 포트)나 LM Studio(1234 포트) 등 기존 도구의 OpenAI 호환 HTTP API를 DPU 데몬이 안전한 프록시로 토스하고 스트리밍하는 방식으로 전면 교체**했습니다.
-*   **사용성:** 사용자는 LM Studio만 켜두면 DPU 데몬이 자동으로 스캔하여 P2P 네트워크에 연결합니다. 특정 IP/포트(`http://192.168.0.5:12345`)를 지정하는 것만으로 연동되는 수동 설정도 완벽 지원하여 범용성을 갖추었습니다.
+*   **개선안:** 이미 사용자가 로컬 PC에 설치해 둔 **Ollama(11434 포트)나 LM Studio(1234 포트) 등 기존 도구의 OpenAI 호환 HTTP API를 iToken 데몬이 안전한 프록시로 토스하고 스트리밍하는 방식으로 전면 교체**했습니다.
+*   **사용성:** 사용자는 LM Studio만 켜두면 iToken 데몬이 자동으로 스캔하여 P2P 네트워크에 연결합니다. 특정 IP/포트(`http://192.168.0.5:12345`)를 지정하는 것만으로 연동되는 수동 설정도 완벽 지원하여 범용성을 갖추었습니다.
 
 ### B. 에너지 절약을 위한 "1 Query = 1 Node" 기본 노선 확립
 *   **기존 계획:** 합의 검증을 위해 매번 2개 이상의 노드가 동일 쿼리를 계산하여 전력과 컴퓨팅 자원이 크게 낭비되었음.

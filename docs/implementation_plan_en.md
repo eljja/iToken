@@ -1,4 +1,4 @@
-# DPU (Decentralized Processing Unit) — Detailed Implementation Plan v2 (English)
+# iToken (Decentralized Processing Unit) — Detailed Implementation Plan v2 (English)
 
 > Fusing P2P Networking, Decoupled LLM APIs, and a Sovereign Ledger (iToken) for Decentralized AI Inference.
 
@@ -47,7 +47,7 @@ After careful evaluation, building the core P2P daemon in Python was rejected du
 
 **Key Advantages:**
 1.  **Rust Daemon:** Extremely small binary footprint, low memory usage, compile-time thread safety, and zero garbage collection spikes.
-2.  **Decoupled API (Simple is Best):** Leverages existing tools (Ollama, LM Studio) that already solve GPU optimization (CUDA, Metal, Vulkan) and quantization. The DPU daemon acts as a lightweight P2P reverse proxy.
+2.  **Decoupled API (Simple is Best):** Leverages existing tools (Ollama, LM Studio) that already solve GPU optimization (CUDA, Metal, Vulkan) and quantization. The iToken daemon acts as a lightweight P2P reverse proxy.
 3.  **Port Auto-Discovery:** Probes standard ports (11434, 1234, 8080) to dynamically register running models in the DHT. Supports manual override IP/Port (`http://192.168.0.5:12345`).
 
 ---
@@ -148,11 +148,11 @@ $$\text{iToken Reward} = \text{Generated Tokens} \times TQW_{M, Q} \times \text{
     *   **Market Separation:** Fast GPU nodes serve real-time API requests with minimum TPS thresholds. Slower CPU nodes bid for batch offline tasks (e.g., bulk translations) on the orderbook.
 
 ### 4.3 Verification Consensus (Optimistic Challenger)
-Instead of forcing expensive continuous verification (like VeriLLM) on all queries, DPU uses an **Optimistic Challenger Model**:
+Instead of forcing expensive continuous verification (like VeriLLM) on all queries, iToken uses an **Optimistic Challenger Model**:
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│               [ DPU Layered Verification System ]                     │
+│               [ iToken Layered Verification System ]                     │
 ├───────────────────────────────────────────────────────────────────────┤
 │  Level 1: Semantic Embedding Agreement (Lightweight)                  │
 │  • Compares response embeddings using a 300MB MiniLM model (>=0.85).  │
@@ -178,22 +178,22 @@ Instead of forcing expensive continuous verification (like VeriLLM) on all queri
 ## 5. File Structure & PoC Blueprint
 
 ```
-d:/Code/DPU/
+d:/Code/iToken/
 ├── Cargo.toml                    # Workspace manifest
 ├── README.md                     # Repository overview (English)
 ├── README_KR.md                  # Repository overview (Korean)
 │
 ├── crates/
-│   ├── dpu-core/                 # Shared types, cryptographic keys, signatures
-│   ├── dpu-network/              # libp2p + QUIC + Kademlia DHT routing
-│   ├── dpu-inference/            # OpenAI API proxy, Port Scanner, and Tokenizer
+│   ├── itoken-core/                 # Shared types, cryptographic keys, signatures
+│   ├── itoken-network/              # libp2p + QUIC + Kademlia DHT routing
+│   ├── itoken-inference/            # OpenAI API proxy, Port Scanner, and Tokenizer
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── detector.rs       # Auto-scans local ports (11434, 1234, etc.)
 │   │       ├── proxy.rs          # Proxies P2P requests <-> local HTTP APIs
 │   │       └── proof.rs          # Signs compute receipts and measures TPS
-│   ├── dpu-harness/              # Harness routing, reputation metrics, failover
-│   └── dpu-ledger/               # Substrate solo chain / lightweight PoC ledger
+│   ├── itoken-harness/              # Harness routing, reputation metrics, failover
+│   └── itoken-ledger/               # Substrate solo chain / lightweight PoC ledger
 ```
 
 ---
