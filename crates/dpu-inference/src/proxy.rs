@@ -1,9 +1,14 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use futures::stream::{BoxStream, StreamExt};
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
+use tracing::{debug, error, warn};
 use dpu_core::types::InferenceRequest;
+
+// ─── OpenAI API Types ──────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 struct ChatMessage {
@@ -21,6 +26,8 @@ struct OpenAICompletionRequest {
     max_tokens: Option<usize>,
 }
 
+// ─── Inference Proxy ───────────────────────────────────────────────────────────
+
 pub struct InferenceProxy {
     client: Client,
     backend_url: String,
@@ -34,18 +41,23 @@ impl InferenceProxy {
         }
     }
 
+    /// Proxy an inference request to the local LLM backend via OpenAI-compatible streaming API.
+    /// Returns a token stream and a metrics extraction closure.
     pub async fn proxy_query(
         &self,
         req: InferenceRequest,
     ) -> Result<
         (
             BoxStream<'static, Result<String, String>>,
-            impl FnOnce() -> (usize, f64), // Fn to get final metrics: (token_count, tps)
+            impl FnOnce() -> (usize, f64), // (token_count, tokens_per_second)
         ),
         String,
     > {
+        // Validate request before forwarding
+        req.validate().map_err(|e| format!("Request validation failed: {}", e))?;
+
         let endpoint = format!("{}/v1/chat/completions", self.backend_url);
-        
+
         let payload = OpenAICompletionRequest {
             model: req.model,
             messages: vec![ChatMessage {
@@ -57,22 +69,26 @@ impl InferenceProxy {
             max_tokens: req.max_tokens,
         };
 
+        debug!(endpoint = %endpoint, "Sending streaming request to backend");
+
         let resp = self.client
             .post(&endpoint)
             .json(&payload)
             .send()
             .await
-            .map_err(|e| format!("Failed to connect to local LLM backend: {}", e))?;
+            .map_err(|e| format!("Failed to connect to LLM backend at {}: {}", self.backend_url, e))?;
 
         if !resp.status().is_success() {
+            let status = resp.status();
             let err_text = resp.text().await.unwrap_or_default();
-            return Err(format!("Local LLM backend returned error: {}", err_text));
+            error!(status = %status, error = %err_text, "Backend returned error");
+            return Err(format!("LLM backend error ({}): {}", status, err_text));
         }
 
         let mut stream = resp.bytes_stream();
         let start_time = Instant::now();
-        let total_characters = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let total_tokens = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let total_characters = Arc::new(AtomicUsize::new(0));
+        let total_tokens = Arc::new(AtomicUsize::new(0));
 
         let total_chars_stream = total_characters.clone();
         let total_tokens_stream = total_tokens.clone();
@@ -108,8 +124,8 @@ impl InferenceProxy {
                                 .and_then(|c| c.as_str())
                             {
                                 if !content.is_empty() {
-                                    total_chars_stream.fetch_add(content.len(), std::sync::atomic::Ordering::SeqCst);
-                                    total_tokens_stream.fetch_add(estimate_token_count(content), std::sync::atomic::Ordering::SeqCst);
+                                    total_chars_stream.fetch_add(content.len(), Ordering::SeqCst);
+                                    total_tokens_stream.fetch_add(estimate_token_count(content), Ordering::SeqCst);
                                     yield content.to_string();
                                 }
                             }
@@ -119,18 +135,16 @@ impl InferenceProxy {
             }
         };
 
-        // Wrap stream in box
         let boxed_stream = output_stream
             .map(|res| res.map_err(|e: String| e))
             .boxed();
 
-        // Metric extraction closure
         let get_metrics = move || {
             let elapsed = start_time.elapsed().as_secs_f64();
-            let total_chars_val = total_characters.load(std::sync::atomic::Ordering::SeqCst);
-            let total_tokens_val = total_tokens.load(std::sync::atomic::Ordering::SeqCst);
-            // Fallback to characters if token estimation is 0
+            let total_chars_val = total_characters.load(Ordering::SeqCst);
+            let total_tokens_val = total_tokens.load(Ordering::SeqCst);
             let tokens = if total_tokens_val == 0 && total_chars_val > 0 {
+                // Fallback: approximate 4 characters per token
                 (total_chars_val as f64 / 4.0).ceil() as usize
             } else {
                 total_tokens_val
@@ -147,19 +161,71 @@ impl InferenceProxy {
     }
 }
 
+// ─── Token Estimation ──────────────────────────────────────────────────────────
+
+/// Approximate BPE token count from text.
+/// For English: ~1.3 tokens per word. For CJK: ~1 token per character.
+/// This is a billing approximation; exact counts require the actual tokenizer.
 fn estimate_token_count(text: &str) -> usize {
-    // Simple BPE/Tokenization approximation for English:
-    // Split by whitespace and count words, and count punctuation marks as separate tokens.
     if text.is_empty() {
         return 0;
     }
+
     let mut count = 0;
     for word in text.split_whitespace() {
         count += 1;
-        // Check for common trailing punctuation
-        if word.ends_with('.') || word.ends_with(',') || word.ends_with('!') || word.ends_with('?') || word.ends_with(';') {
-            count += 1;
-        }
+        // Punctuation that BPE typically splits as separate tokens
+        let trailing_punct = word.chars().rev().take_while(|c| c.is_ascii_punctuation()).count();
+        count += trailing_punct;
     }
+
+    // CJK characters are typically 1 token each
+    let cjk_chars = text.chars().filter(|c| is_cjk(*c)).count();
+    if cjk_chars > 0 {
+        count += cjk_chars;
+    }
+
     count.max(1)
+}
+
+fn is_cjk(c: char) -> bool {
+    matches!(c,
+        '\u{4E00}'..='\u{9FFF}' |   // CJK Unified Ideographs
+        '\u{3400}'..='\u{4DBF}' |   // CJK Extension A
+        '\u{AC00}'..='\u{D7AF}' |   // Hangul Syllables
+        '\u{3040}'..='\u{309F}' |   // Hiragana
+        '\u{30A0}'..='\u{30FF}'     // Katakana
+    )
+}
+
+// ─── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_estimate_token_count_english() {
+        assert_eq!(estimate_token_count("hello world"), 2);
+        assert_eq!(estimate_token_count("hello, world!"), 4); // hello + , + world + !
+    }
+
+    #[test]
+    fn test_estimate_token_count_empty() {
+        assert_eq!(estimate_token_count(""), 0);
+    }
+
+    #[test]
+    fn test_estimate_token_count_cjk() {
+        let count = estimate_token_count("안녕하세요");
+        assert!(count >= 5, "Korean characters should each count as a token");
+    }
+
+    #[test]
+    fn test_is_cjk() {
+        assert!(is_cjk('한'));
+        assert!(is_cjk('字'));
+        assert!(!is_cjk('A'));
+        assert!(!is_cjk('1'));
+    }
 }

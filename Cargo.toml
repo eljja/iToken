@@ -1,6 +1,6 @@
 [package]
 name = "dpu-node"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [workspace]
@@ -19,12 +19,14 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 ed25519-dalek = "2"
 sha2 = "0.10"
 rand = "0.8"
 futures = "0.3"
 bytes = "1"
+parking_lot = "0.12"
+clap = { version = "4", features = ["derive"] }
 
 [dependencies]
 dpu-core = { path = "crates/dpu-core" }
@@ -39,3 +41,5 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 futures = { workspace = true }
+clap = { workspace = true }
+ctrlc = { version = "3", features = ["termination"] }

@@ -1,6 +1,6 @@
 [package]
 name = "dpu-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -10,5 +10,5 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 ed25519-dalek = { workspace = true }
 sha2 = { workspace = true }
-rand = { workspace = true }
+rand = "0.8"
 hex = "0.4"
