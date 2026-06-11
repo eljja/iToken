@@ -120,8 +120,9 @@ pub fn get_receipt_signing_bytes(receipt: &InferenceReceipt) -> Vec<u8> {
     append_str(&mut bytes, &receipt.query_hash);
     // Integer fields: little-endian fixed-width
     bytes.extend_from_slice(&(receipt.tokens_generated as u64).to_le_bytes());
-    // Float field: canonical IEEE 754 bits as u64 LE
+    // Float fields: canonical IEEE 754 bits as u64 LE
     bytes.extend_from_slice(&receipt.tps.to_bits().to_le_bytes());
+    bytes.extend_from_slice(&receipt.network_median_tps.to_bits().to_le_bytes());
     // Financial fields: exact integers
     bytes.extend_from_slice(&receipt.tqw_nano.to_le_bytes());
     bytes.extend_from_slice(&receipt.amount_nano.to_le_bytes());
@@ -204,6 +205,7 @@ mod tests {
             query_hash: sha256_hash("test query"),
             tokens_generated: 100,
             tps: 45.5,
+            network_median_tps: 25.0,
             tqw_nano: 10_000_000,
             amount_nano: 500_000_000,
             timestamp: 1700000000,
@@ -229,6 +231,7 @@ mod tests {
             query_hash: sha256_hash("test"),
             tokens_generated: 50,
             tps: 30.0,
+            network_median_tps: 25.0,
             tqw_nano: 10_000_000,
             amount_nano: 300_000_000,
             timestamp: 1700000000,
@@ -253,6 +256,7 @@ mod tests {
             query_hash: "hash123".into(),
             tokens_generated: 42,
             tps: 33.33,
+            network_median_tps: 25.0,
             tqw_nano: 10_000_000,
             amount_nano: 420_000_000,
             timestamp: 1700000000,

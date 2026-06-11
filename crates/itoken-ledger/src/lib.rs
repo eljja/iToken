@@ -120,7 +120,6 @@ impl LocalLedger {
     pub fn claim_receipt(
         &self,
         receipt: &InferenceReceipt,
-        network_median_tps: f64,
     ) -> Result<(), String> {
         let mut state = self.state.lock();
 
@@ -166,7 +165,7 @@ impl LocalLedger {
         }
 
         // 4. Verify mathematical correctness — EXACT integer match, no tolerance
-        let expected_amount = receipt.compute_amount(network_median_tps);
+        let expected_amount = receipt.compute_amount();
         if receipt.amount_nano != expected_amount {
             warn!(
                 receipt_id = %receipt.receipt_id,
@@ -211,6 +210,89 @@ impl LocalLedger {
 
         self.save_atomic(&state);
         Ok(())
+    }
+
+    /// Claim a receipt received via Gossipsub sync.
+    /// This only verifies cryptographic signatures, uniqueness (double-spend),
+    /// and balance sufficiency. It does NOT verify the timestamp or the amount
+    /// against local wall-clock time or local median TPS, preventing consensus splits.
+    pub fn claim_gossip_receipt(&self, receipt: &InferenceReceipt) -> Result<(), String> {
+        let mut state = self.state.lock();
+
+        // 1. Double-claim protection
+        if state.claimed_receipts.contains(&receipt.receipt_id) {
+            return Err("Receipt has already been claimed".to_string());
+        }
+
+        // 2. Cryptographic signature verification
+        if !verify_receipt_signatures(receipt) {
+            return Err("Invalid receipt signatures".to_string());
+        }
+
+        // 3. Verify client has sufficient balance
+        let client_bal = state.balances.get(&receipt.client_pubkey).copied().unwrap_or(0);
+        if client_bal < receipt.amount_nano {
+            return Err(format!(
+                "Client has insufficient balance: {} < {}",
+                format_itokens(client_bal),
+                format_itokens(receipt.amount_nano)
+            ));
+        }
+
+        // 4. Execute payment transfer (checked arithmetic)
+        let node_bal = state.balances.get(&receipt.node_pubkey).copied().unwrap_or(0);
+        let new_node_bal = node_bal.checked_add(receipt.amount_nano)
+            .ok_or_else(|| "Node balance overflow".to_string())?;
+
+        state.balances.insert(receipt.client_pubkey.clone(), client_bal - receipt.amount_nano);
+        state.balances.insert(receipt.node_pubkey.clone(), new_node_bal);
+        state.claimed_receipts.insert(receipt.receipt_id.clone());
+
+        info!(
+            receipt_id = %receipt.receipt_id,
+            amount = %format_itokens(receipt.amount_nano),
+            client = %receipt.client_pubkey,
+            node = %receipt.node_pubkey,
+            client_balance = %format_itokens(client_bal - receipt.amount_nano),
+            node_balance = %format_itokens(new_node_bal),
+            "Gossip receipt claimed and payout executed"
+        );
+
+        self.save_atomic(&state);
+        Ok(())
+    }
+
+    /// Export all balances and claimed receipts (for P2P state sync).
+    pub fn export_state(&self) -> (HashMap<String, u64>, HashSet<String>) {
+        let state = self.state.lock();
+        (state.balances.clone(), state.claimed_receipts.clone())
+    }
+
+    /// Import ledger state from an external source (synchronization).
+    /// Merges missing claimed receipts and updates balances.
+    pub fn import_state(
+        &self,
+        external_balances: HashMap<String, u64>,
+        external_claimed_receipts: HashSet<String>,
+    ) {
+        let mut state = self.state.lock();
+
+        let before_receipts = state.claimed_receipts.len();
+        state.claimed_receipts.extend(external_claimed_receipts);
+        let after_receipts = state.claimed_receipts.len();
+
+        for (pubkey, ext_bal) in external_balances {
+            let local_bal = state.balances.entry(pubkey).or_insert(0);
+            *local_bal = ext_bal;
+        }
+
+        if after_receipts > before_receipts {
+            info!(
+                imported_receipts = after_receipts - before_receipts,
+                "Ledger state merged successfully"
+            );
+            self.save_atomic(&state);
+        }
     }
 
     /// Atomic file write: write to temp file, fsync, then rename.

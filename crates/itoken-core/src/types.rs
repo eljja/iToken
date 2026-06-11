@@ -139,6 +139,8 @@ pub struct InferenceReceipt {
     pub query_hash: String,
     pub tokens_generated: usize,
     pub tps: f64,
+    /// The network median TPS used for this calculation
+    pub network_median_tps: f64,
     /// Token Quality Weight in nano-iTokens per generated token at 1x speed
     pub tqw_nano: u64,
     /// Total payment amount in nano-iTokens (exact integer arithmetic)
@@ -149,30 +151,62 @@ pub struct InferenceReceipt {
     pub client_signature: Option<String>,
 }
 
+fn integer_fourth_root(val: u128) -> u64 {
+    let mut low = 0u64;
+    let mut high = 30000u64;
+    let mut ans = 0u64;
+    while low <= high {
+        let mid = low + (high - low) / 2;
+        if let Some(mid4) = (mid as u128).checked_pow(4) {
+            if mid4 <= val {
+                ans = mid;
+                low = mid + 1;
+            } else {
+                if mid == 0 { break; }
+                high = mid - 1;
+            }
+        } else {
+            if mid == 0 { break; }
+            high = mid - 1;
+        }
+    }
+    ans
+}
+
 impl InferenceReceipt {
     /// Compute the payment amount in nano-iTokens using deterministic integer arithmetic.
     ///
     /// Formula: amount = tokens_generated × tqw_nano × speed_multiplier
     /// The speed multiplier is applied as a rational scaling factor to preserve integer precision.
-    pub fn compute_amount(&self, network_median_tps: f64) -> u64 {
+    pub fn compute_amount(&self) -> u64 {
         let base_nano = (self.tokens_generated as u64).saturating_mul(self.tqw_nano);
-        let multiplier = self.tps_multiplier(network_median_tps);
-        // Apply multiplier: multiply base by (multiplier * 1000), then divide by 1000
-        // This gives 3 decimal places of precision in the multiplier
-        let mult_milli = (multiplier * 1000.0).round() as u64;
-        base_nano.saturating_mul(mult_milli) / 1000
+        let multiplier_milli = self.tps_multiplier_milli();
+        base_nano.saturating_mul(multiplier_milli) / 1000
     }
 
-    /// Speed multiplier relative to network median TPS.
+    /// Speed multiplier relative to network median TPS, scaled by 1000 (milli-multiplier).
     /// Formula: (node_tps / median_tps) ^ 0.75, clamped to [0.1, 3.0]
-    pub fn tps_multiplier(&self, network_median_tps: f64) -> f64 {
-        let median = if network_median_tps > 0.0 {
-            network_median_tps
-        } else {
-            1.0 // Prevent division by zero
-        };
-        let ratio = self.tps / median;
-        ratio.powf(0.75).clamp(0.1, 3.0)
+    /// Calculated using integer-only math to prevent platform-dependent float discrepancies:
+    /// mult_milli = integer_fourth_root( (node_tps * 1000)^3 / median_tps^3 )
+    pub fn tps_multiplier_milli(&self) -> u64 {
+        let node_tps_milli = (self.tps * 1000.0).round() as u64;
+        let median_tps_milli = (self.network_median_tps * 1000.0).round() as u64;
+
+        let m = if median_tps_milli > 0 { median_tps_milli } else { 1000 };
+        let n = node_tps_milli;
+
+        // ratio^0.75 * 1000 = ((n^3 * 1000^4) / m^3)^(1/4)
+        // 1000^4 = 1_000_000_000_000
+        let num = (n as u128).saturating_pow(3).saturating_mul(1_000_000_000_000);
+        let den = (m as u128).saturating_pow(3);
+        let ratio_cubed = if den > 0 { num / den } else { 0 };
+
+        integer_fourth_root(ratio_cubed).clamp(100, 3000)
+    }
+
+    /// Speed multiplier relative to network median TPS as f64 (for display/compatibility).
+    pub fn tps_multiplier(&self) -> f64 {
+        self.tps_multiplier_milli() as f64 / 1000.0
     }
 }
 
@@ -219,14 +253,15 @@ mod tests {
             query_hash: "h".into(),
             tokens_generated: 100,
             tps: 50.0,
+            network_median_tps: 25.0,
             tqw_nano: 10_000_000, // 0.01 iToken per token
             amount_nano: 0,
             timestamp: 0,
             node_signature: None,
             client_signature: None,
         };
-        let a1 = r1.compute_amount(25.0);
-        let a2 = r1.compute_amount(25.0);
+        let a1 = r1.compute_amount();
+        let a2 = r1.compute_amount();
         assert_eq!(a1, a2, "compute_amount must be deterministic");
         assert!(a1 > 0, "amount must be positive");
     }
@@ -240,6 +275,7 @@ mod tests {
             query_hash: "h".into(),
             tokens_generated: 1,
             tps: 0.1,
+            network_median_tps: 1000.0,
             tqw_nano: 10_000_000,
             amount_nano: 0,
             timestamp: 0,
@@ -247,10 +283,10 @@ mod tests {
             client_signature: None,
         };
         // Very slow node → clamp to 0.1
-        assert!(r.tps_multiplier(1000.0) >= 0.1);
+        assert!(r.tps_multiplier() >= 0.1);
         // Very fast node → clamp to 3.0
-        let r_fast = InferenceReceipt { tps: 100000.0, ..r.clone() };
-        assert!(r_fast.tps_multiplier(1.0) <= 3.0);
+        let r_fast = InferenceReceipt { tps: 100000.0, network_median_tps: 1.0, ..r.clone() };
+        assert!(r_fast.tps_multiplier() <= 3.0);
     }
 
     #[test]
@@ -299,5 +335,52 @@ mod tests {
             temperature: 0.0,
         };
         assert!(req.validate().is_err());
+    }
+
+    #[test]
+    fn test_integer_fourth_root() {
+        assert_eq!(integer_fourth_root(0), 0);
+        assert_eq!(integer_fourth_root(1), 1);
+        assert_eq!(integer_fourth_root(15), 1);
+        assert_eq!(integer_fourth_root(16), 2);
+        assert_eq!(integer_fourth_root(80), 2);
+        assert_eq!(integer_fourth_root(81), 3);
+        assert_eq!(integer_fourth_root(8_000_000_000_000), 1681);
+    }
+
+    #[test]
+    fn test_deterministic_multiplier_precision() {
+        let r = InferenceReceipt {
+            receipt_id: "test".into(),
+            client_pubkey: "c".into(),
+            node_pubkey: "n".into(),
+            query_hash: "h".into(),
+            tokens_generated: 100,
+            tps: 50.0,
+            network_median_tps: 25.0,
+            tqw_nano: 10_000_000,
+            amount_nano: 0,
+            timestamp: 0,
+            node_signature: None,
+            client_signature: None,
+        };
+        // Ratio = 2.0. Expected multiplier: 2^0.75 = 1.68179... -> 1681 milli
+        let mult = r.tps_multiplier_milli();
+        assert_eq!(mult, 1681);
+
+        // Slow node: ratio = 0.1 -> 0.1^0.75 = 0.1778 -> 177 milli
+        let r_slow = InferenceReceipt { network_median_tps: 500.0, ..r.clone() };
+        let mult_slow = r_slow.tps_multiplier_milli();
+        assert_eq!(mult_slow, 177);
+
+        // Very slow node: ratio = 0.01 -> 0.01^0.75 = 0.0316 -> clamped to floor 0.1 (100 milli)
+        let r_v_slow = InferenceReceipt { network_median_tps: 5000.0, ..r.clone() };
+        let mult_clamped = r_v_slow.tps_multiplier_milli();
+        assert_eq!(mult_clamped, 100);
+
+        // Fast node: ratio = 100.0, clamped to 3.0 (3000 milli)
+        let r_fast = InferenceReceipt { network_median_tps: 0.5, ..r.clone() };
+        let mult_fast = r_fast.tps_multiplier_milli();
+        assert_eq!(mult_fast, 3000);
     }
 }

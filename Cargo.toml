@@ -27,6 +27,9 @@ futures = "0.3"
 bytes = "1"
 parking_lot = "0.12"
 clap = { version = "4", features = ["derive"] }
+axum = { version = "0.7", features = ["json"] }
+tower-http = { version = "0.5", features = ["cors"] }
+async-stream = "0.3"
 
 [dependencies]
 itoken-core = { path = "crates/itoken-core" }
@@ -43,3 +46,7 @@ uuid = { version = "1", features = ["v4"] }
 futures = { workspace = true }
 clap = { workspace = true }
 ctrlc = { version = "3", features = ["termination"] }
+axum = { workspace = true }
+tower-http = { workspace = true }
+ed25519-dalek = { workspace = true }
+async-stream = { workspace = true }

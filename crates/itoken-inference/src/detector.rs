@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::time::Duration;
 use reqwest::Client;
-use tracing::{info, warn, debug};
+use tracing::{info, debug};
 use itoken_core::types::{ModelSpec, NANO_PER_ITOKEN};
 
 // ─── Detected Engine ───────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ struct OllamaModelData {
 #[derive(Deserialize)]
 struct OllamaShowResponse {
     #[serde(default)]
-    parameters: Option<String>,
+    _parameters: Option<String>,
     #[serde(default)]
     modelinfo: Option<serde_json::Value>,
 }
@@ -55,7 +55,6 @@ const DEFAULT_TARGETS: &[(&str, &str)] = &[
 
 pub struct PortDetector {
     client: Client,
-    timeout: Duration,
 }
 
 impl PortDetector {
@@ -69,7 +68,6 @@ impl PortDetector {
                 .timeout(timeout)
                 .build()
                 .unwrap_or_else(|_| Client::new()),
-            timeout,
         }
     }
 

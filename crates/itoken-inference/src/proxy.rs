@@ -5,7 +5,7 @@ use futures::stream::{BoxStream, StreamExt};
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 use itoken_core::types::InferenceRequest;
 
 // ─── OpenAI API Types ──────────────────────────────────────────────────────────
