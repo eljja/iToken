@@ -1,0 +1,7 @@
+/target
+/ledger.json
+/reputation.json
+**/*.rs.bk
+.idea/
+.vscode/
+*.log

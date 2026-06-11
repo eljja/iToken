@@ -1,0 +1,13 @@
+[package]
+name = "dpu-harness"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dpu-core = { path = "../dpu-core" }
+dpu-network = { path = "../dpu-network" }
+dpu-inference = { path = "../dpu-inference" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
