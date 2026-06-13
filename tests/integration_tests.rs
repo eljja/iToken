@@ -2,25 +2,36 @@ use std::time::Duration;
 use itoken_network::{P2PNode, P2PEvent, P2PInferenceRequest, P2PRequest, P2PResponse};
 use itoken_core::types::{InferenceRequest, InferenceReceipt};
 
+fn get_free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
 #[tokio::test]
 async fn test_p2p_request_response_and_sync() {
     // 1. Initialize two nodes on local loopback with dedicated test ports
     let node1 = P2PNode::new().unwrap();
     let node2 = P2PNode::new().unwrap();
 
-    let addr1 = "/ip4/127.0.0.1/tcp/50055".parse().unwrap();
+    let port1 = get_free_port();
+    let port2 = get_free_port();
+
+    let addr1 = format!("/ip4/127.0.0.1/tcp/{}", port1).parse().unwrap();
     node1.start_listening(addr1).await.unwrap();
 
-    let addr2 = "/ip4/127.0.0.1/tcp/50056".parse().unwrap();
+    let addr2 = format!("/ip4/127.0.0.1/tcp/{}", port2).parse().unwrap();
     node2.start_listening(addr2).await.unwrap();
 
     // Dial node1 from node2
-    node2.dial("/ip4/127.0.0.1/tcp/50055".parse().unwrap()).await.unwrap();
+    node2.dial(format!("/ip4/127.0.0.1/tcp/{}", port1).parse().unwrap()).await.unwrap();
     tokio::time::sleep(Duration::from_millis(1000)).await; // Allow dial and connection upgrade to complete
 
     // Spawning node 1's event receiver to handle requests in the background
     let node1_peer_id = node1.peer_id();
-    let mut node1_rx = node1;
+    let node1_rx = node1;
     let handle = tokio::spawn(async move {
         // Loop twice: once for inference request, once for sync request
         for _ in 0..2 {

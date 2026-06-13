@@ -17,6 +17,9 @@ pub struct LedgerState {
     pub balances: HashMap<String, u64>,
     /// Set of receipt IDs already claimed (prevents double-spend)
     pub claimed_receipts: HashSet<String>,
+    /// Timestamps when each receipt was claimed (prevents unbounded claimed_receipts growth)
+    #[serde(default)]
+    pub receipt_timestamps: HashMap<String, u64>,
 }
 
 // ─── Local Ledger ──────────────────────────────────────────────────────────────
@@ -41,11 +44,13 @@ impl LocalLedger {
             }).unwrap_or_else(|_| LedgerState {
                 balances: HashMap::new(),
                 claimed_receipts: HashSet::new(),
+                receipt_timestamps: HashMap::new(),
             })
         } else {
             LedgerState {
                 balances: HashMap::new(),
                 claimed_receipts: HashSet::new(),
+                receipt_timestamps: HashMap::new(),
             }
         };
 
@@ -121,6 +126,13 @@ impl LocalLedger {
         &self,
         receipt: &InferenceReceipt,
     ) -> Result<(), String> {
+        if receipt.amount_nano == 0 {
+            return Err("Receipt amount must be positive".to_string());
+        }
+        if receipt.client_pubkey == receipt.node_pubkey {
+            return Err("Self-to-self payment not allowed".to_string());
+        }
+
         let mut state = self.state.lock();
 
         // 1. Double-claim protection
@@ -197,6 +209,7 @@ impl LocalLedger {
         state.balances.insert(receipt.client_pubkey.clone(), client_bal - receipt.amount_nano);
         state.balances.insert(receipt.node_pubkey.clone(), new_node_bal);
         state.claimed_receipts.insert(receipt.receipt_id.clone());
+        state.receipt_timestamps.insert(receipt.receipt_id.clone(), receipt.timestamp);
 
         info!(
             receipt_id = %receipt.receipt_id,
@@ -218,6 +231,13 @@ impl LocalLedger {
     /// against local wall-clock time or local median TPS, preventing consensus splits.
     pub fn claim_gossip_receipt(&self, receipt: &InferenceReceipt) -> Result<(), String> {
         let mut state = self.state.lock();
+
+        if receipt.amount_nano == 0 {
+            return Err("Receipt amount must be positive".to_string());
+        }
+        if receipt.client_pubkey == receipt.node_pubkey {
+            return Err("Self-to-self payment not allowed".to_string());
+        }
 
         // 1. Double-claim protection
         if state.claimed_receipts.contains(&receipt.receipt_id) {
@@ -247,6 +267,7 @@ impl LocalLedger {
         state.balances.insert(receipt.client_pubkey.clone(), client_bal - receipt.amount_nano);
         state.balances.insert(receipt.node_pubkey.clone(), new_node_bal);
         state.claimed_receipts.insert(receipt.receipt_id.clone());
+        state.receipt_timestamps.insert(receipt.receipt_id.clone(), receipt.timestamp);
 
         info!(
             receipt_id = %receipt.receipt_id,
@@ -278,21 +299,84 @@ impl LocalLedger {
         let mut state = self.state.lock();
 
         let before_receipts = state.claimed_receipts.len();
-        state.claimed_receipts.extend(external_claimed_receipts);
-        let after_receipts = state.claimed_receipts.len();
+        
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
-        for (pubkey, ext_bal) in external_balances {
-            let local_bal = state.balances.entry(pubkey).or_insert(0);
-            *local_bal = ext_bal;
+        for receipt_id in external_claimed_receipts {
+            if state.claimed_receipts.insert(receipt_id.clone()) {
+                state.receipt_timestamps.insert(receipt_id, now);
+            }
         }
 
-        if after_receipts > before_receipts {
+        let after_receipts = state.claimed_receipts.len();
+        let mut changed = after_receipts > before_receipts;
+
+        for (pubkey, ext_bal) in external_balances {
+            if let Some(&local_bal) = state.balances.get(&pubkey) {
+                if local_bal != ext_bal {
+                    warn!(
+                        pubkey = %pubkey,
+                        local = local_bal,
+                        external = ext_bal,
+                        "State sync mismatch: local balance differs from external balance. Keeping local state."
+                    );
+                }
+            } else {
+                state.balances.insert(pubkey, ext_bal);
+                changed = true;
+            }
+        }
+
+        if changed {
             info!(
                 imported_receipts = after_receipts - before_receipts,
                 "Ledger state merged successfully"
             );
             self.save_atomic(&state);
         }
+    }
+
+    /// Prune claimed receipts that are older than the specified retention period in seconds.
+    pub fn prune_old_receipts(&self, max_age_secs: u64) -> usize {
+        let mut state = self.state.lock();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let before = state.claimed_receipts.len();
+
+        let mut to_remove = Vec::new();
+        for (receipt_id, &timestamp) in &state.receipt_timestamps {
+            if now > timestamp && now - timestamp > max_age_secs {
+                to_remove.push(receipt_id.clone());
+            }
+        }
+
+        for receipt_id in &to_remove {
+            state.claimed_receipts.remove(receipt_id);
+            state.receipt_timestamps.remove(receipt_id);
+        }
+
+        let mut missing_timestamps = Vec::new();
+        for receipt_id in &state.claimed_receipts {
+            if !state.receipt_timestamps.contains_key(receipt_id) {
+                missing_timestamps.push(receipt_id.clone());
+            }
+        }
+        for receipt_id in missing_timestamps {
+            state.receipt_timestamps.insert(receipt_id, now);
+        }
+
+        let pruned = before - state.claimed_receipts.len();
+        if pruned > 0 {
+            info!(pruned = pruned, "Pruned old claimed receipts");
+            self.save_atomic(&state);
+        }
+        pruned
     }
 
     /// Atomic file write: write to temp file, fsync, then rename.

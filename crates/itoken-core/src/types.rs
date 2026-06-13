@@ -22,6 +22,9 @@ pub const MAX_TEMPERATURE: f32 = 2.0;
 /// Maximum model name length in characters
 pub const MAX_MODEL_NAME_LEN: usize = 256;
 
+/// Maximum request ID length in characters
+pub const MAX_REQUEST_ID_LEN: usize = 128;
+
 // ─── Formatting Helpers ────────────────────────────────────────────────────────
 
 /// Format nano-iTokens as human-readable iToken string (e.g., "1.234567890")
@@ -88,6 +91,12 @@ pub struct InferenceRequest {
 impl InferenceRequest {
     /// Validate all fields before processing. Returns Err with reason on failure.
     pub fn validate(&self) -> Result<(), String> {
+        if self.request_id.is_empty() || self.request_id.len() > MAX_REQUEST_ID_LEN {
+            return Err(format!(
+                "Request ID must be 1-{} characters, got {}",
+                MAX_REQUEST_ID_LEN, self.request_id.len()
+            ));
+        }
         if self.prompt.is_empty() {
             return Err("Prompt cannot be empty".to_string());
         }
@@ -382,5 +391,26 @@ mod tests {
         let r_fast = InferenceReceipt { network_median_tps: 0.5, ..r.clone() };
         let mult_fast = r_fast.tps_multiplier_milli();
         assert_eq!(mult_fast, 3000);
+    }
+
+    #[test]
+    fn test_validate_request_bad_request_id() {
+        let req_empty = InferenceRequest {
+            request_id: "".into(),
+            prompt: "hi".into(),
+            model: "llama3:8b".into(),
+            max_tokens: None,
+            temperature: 0.7,
+        };
+        assert!(req_empty.validate().is_err());
+
+        let req_long = InferenceRequest {
+            request_id: "a".repeat(129),
+            prompt: "hi".into(),
+            model: "llama3:8b".into(),
+            max_tokens: None,
+            temperature: 0.7,
+        };
+        assert!(req_long.validate().is_err());
     }
 }

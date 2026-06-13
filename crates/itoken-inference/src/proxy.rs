@@ -109,8 +109,7 @@ impl InferenceProxy {
                         continue;
                     }
 
-                    if trimmed.starts_with("data: ") {
-                        let data = &trimmed[6..];
+                    if let Some(data) = trimmed.strip_prefix("data: ") {
                         if data == "[DONE]" {
                             break;
                         }
@@ -173,16 +172,27 @@ fn estimate_token_count(text: &str) -> usize {
 
     let mut count = 0;
     for word in text.split_whitespace() {
-        count += 1;
-        // Punctuation that BPE typically splits as separate tokens
-        let trailing_punct = word.chars().rev().take_while(|c| c.is_ascii_punctuation()).count();
-        count += trailing_punct;
-    }
-
-    // CJK characters are typically 1 token each
-    let cjk_chars = text.chars().filter(|c| is_cjk(*c)).count();
-    if cjk_chars > 0 {
-        count += cjk_chars;
+        let has_cjk = word.chars().any(is_cjk);
+        if has_cjk {
+            let mut in_non_cjk = false;
+            for c in word.chars() {
+                if is_cjk(c) || c.is_ascii_punctuation() {
+                    if in_non_cjk {
+                        in_non_cjk = false;
+                    }
+                    count += 1;
+                } else {
+                    if !in_non_cjk {
+                        in_non_cjk = true;
+                        count += 1;
+                    }
+                }
+            }
+        } else {
+            count += 1;
+            let trailing_punct = word.chars().rev().take_while(|c| c.is_ascii_punctuation()).count();
+            count += trailing_punct;
+        }
     }
 
     count.max(1)
@@ -218,7 +228,13 @@ mod tests {
     #[test]
     fn test_estimate_token_count_cjk() {
         let count = estimate_token_count("안녕하세요");
-        assert!(count >= 5, "Korean characters should each count as a token");
+        assert_eq!(count, 5, "Korean characters should each count as exactly 1 token");
+    }
+
+    #[test]
+    fn test_estimate_token_count_mixed() {
+        assert_eq!(estimate_token_count("hello한국어!"), 5);
+        assert_eq!(estimate_token_count("한국어 문장"), 5);
     }
 
     #[test]

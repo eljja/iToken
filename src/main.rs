@@ -7,7 +7,12 @@ use tracing::{info, error, warn, debug};
 use axum::{
     routing::{get, post},
     Router, Json, response::IntoResponse,
+    extract::ConnectInfo,
+    http::StatusCode,
 };
+use std::net::SocketAddr;
+use std::collections::HashMap;
+use std::time::Instant;
 use axum::response::sse::{Event as SseEvent, Sse};
 use tower_http::cors::CorsLayer;
 use serde_json::json;
@@ -61,6 +66,36 @@ struct Args {
     /// Local HTTP API port for client applications (default: 8420)
     #[arg(long, default_value = "8420")]
     api_port: u16,
+
+    /// Initial client balance seed amount in iTokens
+    #[arg(long, default_value = "100.0")]
+    seed_amount: f64,
+}
+
+// ─── Rate Limiter ──────────────────────────────────────────────────────────────
+
+struct RateLimiter {
+    visits: HashMap<std::net::IpAddr, Vec<Instant>>,
+}
+
+impl RateLimiter {
+    fn new() -> Self {
+        Self {
+            visits: HashMap::new(),
+        }
+    }
+
+    fn check_limit(&mut self, ip: std::net::IpAddr, limit: usize, window: Duration) -> bool {
+        let now = Instant::now();
+        let times = self.visits.entry(ip).or_default();
+        times.retain(|&t| now.duration_since(t) < window);
+        if times.len() < limit {
+            times.push(now);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 // ─── HTTP API Shared State ──────────────────────────────────────────────────────
@@ -70,6 +105,8 @@ struct AppState {
     reputation_db: Arc<ReputationDb>,
     network_stats: Arc<NetworkStats>,
     p2p_node: Arc<P2PNode>,
+    detected_engines: Arc<parking_lot::Mutex<Vec<itoken_inference::detector::DetectedEngine>>>,
+    rate_limiter: Arc<parking_lot::Mutex<RateLimiter>>,
     node_priv: ed25519_dalek::SigningKey,
     client_priv: ed25519_dalek::SigningKey,
     client_hex: String,
@@ -143,8 +180,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reputation_db = Arc::new(ReputationDb::new(reputation_path.to_str().unwrap_or("reputation.json"))?);
     let network_stats = Arc::new(NetworkStats::new());
 
-    // Register accounts and seed initial balances
-    ledger.register_account(&client_hex, 100 * NANO_PER_ITOKEN);
+    // Register accounts and seed initial balances (configurable seed amount)
+    let seed_nano = (args.seed_amount * NANO_PER_ITOKEN as f64) as u64;
+    ledger.register_account(&client_hex, seed_nano);
     ledger.register_account(&node_hex, 0);
 
     info!(
@@ -189,14 +227,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Discover local LLM models and advertise them
     let detector = PortDetector::new();
-    let detected_engines = if let Some(ref custom_url) = args.backend {
+    let initial_detected = if let Some(ref custom_url) = args.backend {
         detector.probe_custom(custom_url).await.map(|e| vec![e]).unwrap_or_default()
     } else {
         detector.scan_all().await
     };
 
+    let detected_engines = Arc::new(parking_lot::Mutex::new(initial_detected.clone()));
+    let rate_limiter = Arc::new(parking_lot::Mutex::new(RateLimiter::new()));
+
     let mut hosted_models = Vec::new();
-    for engine in &detected_engines {
+    for engine in &initial_detected {
         for model in &engine.active_models {
             hosted_models.push(model.name.clone());
             info!(model = %model.name, "Advertising local model on DHT");
@@ -216,6 +257,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         reputation_db: reputation_db.clone(),
         network_stats: network_stats.clone(),
         p2p_node: p2p_node.clone(),
+        detected_engines: detected_engines.clone(),
+        rate_limiter,
         node_priv,
         client_priv,
         client_hex,
@@ -227,9 +270,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let p2p_state = state.clone();
     let p2p_node_loop = p2p_node.clone();
     tokio::spawn(async move {
-        let mut loop_node = p2p_node_loop;
+        let loop_node = p2p_node_loop;
         info!("P2P event loop started");
-        while let Some(event) = Arc::get_mut(&mut loop_node).unwrap().recv_event().await {
+        while let Some(event) = loop_node.recv_event().await {
             match event {
                 P2PEvent::Request { peer_id, request, channel } => {
                     match request {
@@ -244,14 +287,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 continue;
                             }
 
-                            // Process query locally
-                            let detector = PortDetector::new();
-                            let detected = detector.scan_all().await;
-                            let (backend_url, tqw_nano) = if let Some(engine) = detected.first() {
-                                let spec = engine.active_models.first().unwrap();
-                                (engine.url.clone(), spec.tqw_nano)
-                            } else {
-                                ("http://localhost:9999".to_string(), NANO_PER_ITOKEN / 100)
+                            // Process query locally (read from cache to avoid port scanning latency)
+                            let (backend_url, tqw_nano) = {
+                                let detected = p2p_state.detected_engines.lock();
+                                if let Some(engine) = detected.first() {
+                                    let tqw = engine.active_models.first().map(|m| m.tqw_nano).unwrap_or(NANO_PER_ITOKEN / 100);
+                                    (engine.url.clone(), tqw)
+                                } else {
+                                    ("http://localhost:9999".to_string(), NANO_PER_ITOKEN / 100)
+                                }
                             };
 
                             let start = std::time::Instant::now();
@@ -284,6 +328,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             let elapsed = start.elapsed().as_secs_f64();
                             let tps = if elapsed > 0.0 { actual_tokens as f64 / elapsed } else { 25.0 };
+                            
+                            // Record local inference performance
+                            p2p_state.network_stats.record_local_inference(tps);
 
                             let median_tps = p2p_state.network_stats.get_median_tps();
                             let query_hash = sha256_hash(&req.prompt);
@@ -347,12 +394,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
             interval.tick().await;
+
+            // Prune claimed receipts older than 7 days
+            health_state.ledger.prune_old_receipts(7 * 24 * 3600);
             
-            // Build health broadcast payload
+            // Build health broadcast payload (broadcast actual local measured average TPS)
             let payload = json!({
                 "peer_id": health_node.peer_id().to_string(),
                 "models": hosted_models,
-                "tps_avg": health_state.reputation_db.get_score(&health_state.node_hex) * 50.0, // Scale reputation score into average TPS metric
+                "tps_avg": health_state.network_stats.get_local_avg_tps(),
                 "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()
             });
 
@@ -360,8 +410,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = health_node.publish_health(bytes).await;
             }
 
+            let median_tps_str = format!("{:.2}", health_state.network_stats.get_median_tps());
             info!(
-                median_tps = %format!("{:.2}", health_state.network_stats.get_median_tps()),
+                median_tps = %median_tps_str,
                 "Live network status updated"
             );
         }
@@ -379,6 +430,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             tokio::time::sleep(retry_interval).await;
             attempts += 1;
+
+            if sync_node.is_closed() {
+                info!("P2P node shutdown detected, stopping ledger sync task");
+                break;
+            }
 
             let peers = sync_node.get_connected_peers().await;
             if let Some(&peer_id) = peers.first() {
@@ -407,12 +463,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // 7. Spawn HTTP Server Gateway (Axum Router)
+    // 7. Spawn engine periodic detection task
+    let scan_state = state.clone();
+    let scan_args = args.clone();
+    tokio::spawn(async move {
+        let detector = PortDetector::new();
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        // Skip the first tick since we already scanned once on startup
+        interval.tick().await; 
+        loop {
+            interval.tick().await;
+            if scan_state.p2p_node.is_closed() {
+                break;
+            }
+            debug!("Starting periodic local LLM engine scan...");
+            let detected = if let Some(ref custom_url) = scan_args.backend {
+                detector.probe_custom(custom_url).await.map(|e| vec![e]).unwrap_or_default()
+            } else {
+                detector.scan_all().await
+            };
+            
+            {
+                let mut engines = scan_state.detected_engines.lock();
+                if *engines != detected {
+                    info!(
+                        old_count = engines.len(),
+                        new_count = detected.len(),
+                        "Local LLM engine status changed"
+                    );
+                    *engines = detected;
+                }
+            }
+        }
+    });
+
+    // 8. Spawn HTTP Server Gateway (Axum Router)
     let app = Router::new()
         .route("/v1/chat/completions", post(handle_chat_completions))
         .route("/v1/balance", get(handle_balance))
         .route("/v1/reputation", get(handle_reputation))
         .route("/v1/stats", get(handle_stats))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), rate_limit_middleware))
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
 
@@ -420,7 +511,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(port = args.api_port, "OpenAI-compatible HTTP Gateway listening");
     
     // Setup clean graceful shutdown hook
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(async move {
             tokio::signal::ctrl_c().await.ok();
             info!("Shutting down HTTP Gateway and P2P Node cleanly...");
@@ -498,8 +589,7 @@ async fn handle_chat_completions(
     let text;
     let receipt;
 
-    if use_p2p && selected_peer.is_some() {
-        let peer_id = selected_peer.unwrap();
+    if let (true, Some(peer_id)) = (use_p2p, selected_peer) {
         info!(peer = %peer_id, model = %req.model, "Routing request to remote peer over P2P");
 
         let p2p_req = P2PInferenceRequest {
@@ -595,14 +685,14 @@ async fn handle_chat_completions(
         }
     } else {
         // Local execution fallback
-        let detector = PortDetector::new();
-        let detected = detector.scan_all().await;
-        
-        let (backend_url, tqw_nano) = if let Some(engine) = detected.first() {
-            let model_spec = engine.active_models.first().unwrap();
-            (engine.url.clone(), model_spec.tqw_nano)
-        } else {
-            ("http://localhost:9999".to_string(), NANO_PER_ITOKEN / 100)
+        let (backend_url, tqw_nano) = {
+            let detected = state.detected_engines.lock();
+            if let Some(engine) = detected.first() {
+                let tqw = engine.active_models.first().map(|m| m.tqw_nano).unwrap_or(NANO_PER_ITOKEN / 100);
+                (engine.url.clone(), tqw)
+            } else {
+                ("http://localhost:9999".to_string(), NANO_PER_ITOKEN / 100)
+            }
         };
 
         let start = std::time::Instant::now();
@@ -635,6 +725,9 @@ async fn handle_chat_completions(
 
         let elapsed = start.elapsed().as_secs_f64();
         let tps = if elapsed > 0.0 { actual_tokens as f64 / elapsed } else { 25.0 };
+
+        // Record local inference performance
+        state.network_stats.record_local_inference(tps);
 
         let median_tps = state.network_stats.get_median_tps();
         let query_hash = sha256_hash(&req.prompt);
@@ -790,15 +883,23 @@ async fn run_demo_loop(
     let detected = detector.scan_all().await;
 
     let (backend_url, target_model, tqw_nano) = if let Some(engine) = detected.first() {
-        let model = engine.active_models.first().unwrap().clone();
-        info!(
-            engine = %engine.name,
-            url = %engine.url,
-            model = %model.name,
-            tqw = %format_itokens(model.tqw_nano),
-            "Using detected LLM engine"
-        );
-        (engine.url.clone(), model.name, model.tqw_nano)
+        if let Some(model) = engine.active_models.first().cloned() {
+            info!(
+                engine = %engine.name,
+                url = %engine.url,
+                model = %model.name,
+                tqw = %format_itokens(model.tqw_nano),
+                "Using detected LLM engine"
+            );
+            (engine.url.clone(), model.name, model.tqw_nano)
+        } else {
+            warn!("Detected LLM engine has no active models — using mock inference");
+            (
+                "http://localhost:9999".to_string(),
+                "mock-llama3-8b".to_string(),
+                NANO_PER_ITOKEN / 100,
+            )
+        }
     } else {
         warn!("No local LLM engines detected — using mock inference");
         (
@@ -927,4 +1028,33 @@ async fn run_demo_loop(
 
     println!("==================================================");
     Ok(())
+}
+
+// ─── Rate Limiting Middleware ───────────────────────────────────────────────────
+
+async fn rate_limit_middleware(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> impl IntoResponse {
+    let limit = 60; // 60 requests
+    let window = Duration::from_secs(60); // per 1 minute
+    let ip = addr.ip();
+    
+    let allowed = {
+        let mut limiter = state.rate_limiter.lock();
+        limiter.check_limit(ip, limit, window)
+    };
+
+    if allowed {
+        next.run(req).await
+    } else {
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            axum::Json(serde_json::json!({
+                "error": "Rate limit exceeded. Maximum 60 requests per minute."
+            }))
+        ).into_response()
+    }
 }

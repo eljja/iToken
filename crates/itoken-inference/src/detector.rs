@@ -6,7 +6,7 @@ use itoken_core::types::{ModelSpec, NANO_PER_ITOKEN};
 
 // ─── Detected Engine ───────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DetectedEngine {
     pub name: String,
     pub url: String,
@@ -38,8 +38,6 @@ struct OllamaModelData {
 #[derive(Deserialize)]
 struct OllamaShowResponse {
     #[serde(default)]
-    _parameters: Option<String>,
-    #[serde(default)]
     modelinfo: Option<serde_json::Value>,
 }
 
@@ -55,6 +53,12 @@ const DEFAULT_TARGETS: &[(&str, &str)] = &[
 
 pub struct PortDetector {
     client: Client,
+}
+
+impl Default for PortDetector {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PortDetector {

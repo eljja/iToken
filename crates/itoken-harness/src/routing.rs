@@ -31,7 +31,7 @@ impl HarnessRouter {
         scored_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut iter = scored_candidates.into_iter();
-        let primary = iter.next().map(|(id, _)| id).unwrap();
+        let primary = iter.next().map(|(id, _)| id).ok_or_else(|| "No candidates found after sorting".to_string())?;
         let backups: Vec<String> = iter.map(|(id, _)| id).collect();
 
         Ok((primary, backups))

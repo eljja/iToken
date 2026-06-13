@@ -135,7 +135,7 @@ pub struct ItokenBehaviour {
 
 pub struct P2PNode {
     command_tx: mpsc::Sender<P2PCommand>,
-    event_rx: mpsc::Receiver<P2PEvent>,
+    event_rx: tokio::sync::Mutex<mpsc::Receiver<P2PEvent>>,
     local_peer_id: PeerId,
 }
 
@@ -169,9 +169,9 @@ impl P2PNode {
                 let gossip_cfg = gossipsub::ConfigBuilder::default()
                     .heartbeat_interval(Duration::from_secs(1))
                     .validation_mode(gossipsub::ValidationMode::Strict)
-                    .max_transmit_size(8192) // 8KB max message size
+                    .max_transmit_size(65536) // 64KB max message size
                     .build()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
                 let mut gossipsub_behaviour = gossipsub::Behaviour::new(
                     gossipsub::MessageAuthenticity::Signed(key.clone()),
                     gossip_cfg,
@@ -180,12 +180,12 @@ impl P2PNode {
                 // Subscribe to health topic
                 let health_topic = gossipsub::IdentTopic::new(HEALTH_TOPIC);
                 gossipsub_behaviour.subscribe(&health_topic)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)))?;
+                    .map_err(|e| std::io::Error::other(format!("{}", e)))?;
 
                 // Subscribe to ledger topic
                 let ledger_topic = gossipsub::IdentTopic::new(LEDGER_TOPIC);
                 gossipsub_behaviour.subscribe(&ledger_topic)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)))?;
+                    .map_err(|e| std::io::Error::other(format!("{}", e)))?;
 
                 // Identify protocol
                 let identify = identify::Behaviour::new(identify::Config::new(
@@ -219,7 +219,7 @@ impl P2PNode {
 
         Ok(Self {
             command_tx,
-            event_rx,
+            event_rx: tokio::sync::Mutex::new(event_rx),
             local_peer_id,
         })
     }
@@ -311,8 +311,8 @@ impl P2PNode {
         rx.await.map_err(|e| format!("Response channel closed: {}", e))?
     }
 
-    pub async fn recv_event(&mut self) -> Option<P2PEvent> {
-        self.event_rx.recv().await
+    pub async fn recv_event(&self) -> Option<P2PEvent> {
+        self.event_rx.lock().await.recv().await
     }
 
     pub async fn send_response(&self, channel: request_response::ResponseChannel<P2PResponse>, response: P2PResponse) -> Result<(), String> {
@@ -334,6 +334,11 @@ impl P2PNode {
     /// Send shutdown signal to the P2P event loop.
     pub async fn shutdown(&self) {
         let _ = self.command_tx.send(P2PCommand::Shutdown).await;
+    }
+
+    /// Check if the command channel is closed (indicates shutdown).
+    pub fn is_closed(&self) -> bool {
+        self.command_tx.is_closed()
     }
 }
 
